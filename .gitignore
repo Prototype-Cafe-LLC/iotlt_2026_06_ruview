@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Vendor trees (bootstrap-dev-env.sh; not part of this repo)
+/esp-idf-v6.0.1/
+/esp-csi/
+/RuView/

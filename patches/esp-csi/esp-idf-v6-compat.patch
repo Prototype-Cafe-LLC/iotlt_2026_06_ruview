@@ -1,0 +1,147 @@
+diff --git a/examples/esp-radar/console_test/CMakeLists.txt b/examples/esp-radar/console_test/CMakeLists.txt
+index 209bba5..2da188d 100644
+--- a/examples/esp-radar/console_test/CMakeLists.txt
++++ b/examples/esp-radar/console_test/CMakeLists.txt
+@@ -11,3 +11,9 @@ project(${CURDIR})
+ 
+ git_describe(PROJECT_VERSION ${COMPONENT_DIR})
+ message("Project commit: " ${PROJECT_VERSION})
++
++# Workaround for ESP-IDF v6: managed component espressif/led_strip (2.5.5)
++# misses '#include "esp_heap_caps.h"' in led_strip_spi_dev.c, which no longer
++# gets included transitively. Force-include it without editing managed_components.
++idf_component_get_property(led_strip_lib espressif__led_strip COMPONENT_LIB)
++target_compile_options(${led_strip_lib} PRIVATE "-include" "esp_heap_caps.h")
+diff --git a/examples/esp-radar/console_test/components/commands/src/wifi_cmd.c b/examples/esp-radar/console_test/components/commands/src/wifi_cmd.c
+index effd710..500cb47 100644
+--- a/examples/esp-radar/console_test/components/commands/src/wifi_cmd.c
++++ b/examples/esp-radar/console_test/components/commands/src/wifi_cmd.c
+@@ -185,7 +185,7 @@ static int wifi_cmd_ap(int argc, char **argv)
+     }
+ 
+     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
++    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
+ 
+     ESP_LOGI(TAG, "Starting SoftAP SSID: %s, Password: %s", ssid, password);
+ 
+diff --git a/examples/esp-radar/console_test/main/app_main.c b/examples/esp-radar/console_test/main/app_main.c
+index e97733e..377e6e4 100644
+--- a/examples/esp-radar/console_test/main/app_main.c
++++ b/examples/esp-radar/console_test/main/app_main.c
+@@ -619,10 +619,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
+     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+         g_wifi_connect_status = false;
+         ESP_LOGW(TAG, "Wi-Fi disconnected");
+-        esp_radar_config_t radar_config;
+-        esp_radar_get_config(&radar_config);
+-        esp_radar_wifi_reinit(&radar_config.wifi_config);
+-
++        /* IDF v6 workaround: esp_radar_wifi_reinit() calls esp_radar_wifi_init()
++         * which re-runs esp_netif_create_default_wifi_sta() on every disconnect
++         * (unguarded). On IDF v6 this aborts with
++         * "esp_netif_new_api: ... duplicate key" and reboots the chip, causing a
++         * reconnect/crash loop. Wi-Fi and netif are already initialized, so just
++         * retry the association instead of re-initializing everything. */
++        esp_wifi_connect();
+     }
+ }
+ esp_err_t ws2812_led_init(void)
+diff --git a/examples/esp-radar/console_test/tools/config/gui_config.json b/examples/esp-radar/console_test/tools/config/gui_config.json
+index 20b3ab1..ed392ae 100644
+--- a/examples/esp-radar/console_test/tools/config/gui_config.json
++++ b/examples/esp-radar/console_test/tools/config/gui_config.json
+@@ -1 +1 @@
+-{"router_ssid": "Tplink_nyx", "router_password": "12345678", "router_auto_connect": false, "display_raw_data": true, "display_radar_model": true, "display_eigenvalues_table": false}
++{"router_ssid": "39BBA802-5G", "router_password": "1w3d55njvkzt5j", "router_auto_connect": false, "display_raw_data": true, "display_radar_model": true, "display_eigenvalues_table": true}
+\ No newline at end of file
+diff --git a/examples/esp-radar/console_test/tools/esp_csi_tool.py b/examples/esp-radar/console_test/tools/esp_csi_tool.py
+index 9afa171..f472757 100755
+--- a/examples/esp-radar/console_test/tools/esp_csi_tool.py
++++ b/examples/esp-radar/console_test/tools/esp_csi_tool.py
+@@ -1027,26 +1027,26 @@ def radar_data_handle(self, data):
+     if g_display_eigenvalues_table:
+         try:
+             g_radar_data_room_pd[1:] = g_radar_data_room_pd[:-1]
+-            g_radar_data_room_pd.loc[0]['status'] = g_radar_status_array[-1, 0]
+-            g_radar_data_room_pd.loc[0]['threshold'] = g_radar_eigenvalue_threshold_array[-1, 0]
+-            g_radar_data_room_pd.loc[0]['value'] = g_radar_eigenvalue_array[-1, 0]
++            g_radar_data_room_pd.loc[0, 'status'] = g_radar_status_array[-1, 0]
++            g_radar_data_room_pd.loc[0, 'threshold'] = g_radar_eigenvalue_threshold_array[-1, 0]
++            g_radar_data_room_pd.loc[0, 'value'] = g_radar_eigenvalue_array[-1, 0]
+ 
+             value_buff = g_radar_eigenvalue_array[-10:, 0]
+-            g_radar_data_room_pd.loc[0]['max'] = np.max(value_buff)
+-            g_radar_data_room_pd.loc[0]['min'] = np.min(value_buff)
+-            g_radar_data_room_pd.loc[0]['mean'] = np.mean(value_buff)
+-            g_radar_data_room_pd.loc[0]['std'] = np.std(value_buff)
++            g_radar_data_room_pd.loc[0, 'max'] = np.max(value_buff)
++            g_radar_data_room_pd.loc[0, 'min'] = np.min(value_buff)
++            g_radar_data_room_pd.loc[0, 'mean'] = np.mean(value_buff)
++            g_radar_data_room_pd.loc[0, 'std'] = np.std(value_buff)
+ 
+             g_radar_data_human_pd[1:] = g_radar_data_human_pd[:-1]
+-            g_radar_data_human_pd.loc[0]['status'] = g_radar_status_array[-1, 1]
+-            g_radar_data_human_pd.loc[0]['threshold'] = g_radar_eigenvalue_threshold_array[-1, 1]
+-            g_radar_data_human_pd.loc[0]['value'] = g_radar_eigenvalue_array[-1, 1]
++            g_radar_data_human_pd.loc[0, 'status'] = g_radar_status_array[-1, 1]
++            g_radar_data_human_pd.loc[0, 'threshold'] = g_radar_eigenvalue_threshold_array[-1, 1]
++            g_radar_data_human_pd.loc[0, 'value'] = g_radar_eigenvalue_array[-1, 1]
+ 
+             value_buff = g_radar_eigenvalue_array[-10:, 1]
+-            g_radar_data_human_pd.loc[0]['max'] = np.max(value_buff)
+-            g_radar_data_human_pd.loc[0]['min'] = np.min(value_buff)
+-            g_radar_data_human_pd.loc[0]['mean'] = np.mean(value_buff)
+-            g_radar_data_human_pd.loc[0]['std'] = np.std(value_buff)
++            g_radar_data_human_pd.loc[0, 'max'] = np.max(value_buff)
++            g_radar_data_human_pd.loc[0, 'min'] = np.min(value_buff)
++            g_radar_data_human_pd.loc[0, 'mean'] = np.mean(value_buff)
++            g_radar_data_human_pd.loc[0, 'std'] = np.std(value_buff)
+         except Exception as e:
+             print(e)
+     return
+diff --git a/examples/get-started/csi_send/main/app_main.c b/examples/get-started/csi_send/main/app_main.c
+index e26ee5b..3a31ff9 100644
+--- a/examples/get-started/csi_send/main/app_main.c
++++ b/examples/get-started/csi_send/main/app_main.c
+@@ -28,12 +28,12 @@
+ 
+ #if CONFIG_IDF_TARGET_ESP32C5 || CONFIG_IDF_TARGET_ESP32C61 || (CONFIG_IDF_TARGET_ESP32C6 && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0))
+ #define CONFIG_WIFI_BAND_MODE   WIFI_BAND_MODE_2G_ONLY
+-#define CONFIG_WIFI_2G_BANDWIDTHS           WIFI_BW_HT40
+-#define CONFIG_WIFI_5G_BANDWIDTHS           WIFI_BW_HT40
++#define CONFIG_WIFI_2G_BANDWIDTHS           WIFI_BW40
++#define CONFIG_WIFI_5G_BANDWIDTHS           WIFI_BW40
+ #define CONFIG_WIFI_2G_PROTOCOL             WIFI_PROTOCOL_11N
+ #define CONFIG_WIFI_5G_PROTOCOL             WIFI_PROTOCOL_11N
+ #else
+-#define CONFIG_WIFI_BANDWIDTH           WIFI_BW_HT40
++#define CONFIG_WIFI_BANDWIDTH           WIFI_BW40
+ #endif
+ 
+ #define CONFIG_ESP_NOW_PHYMODE           WIFI_PHY_MODE_HT40
+@@ -90,20 +90,20 @@ static void wifi_init()
+ 
+     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+ #if CONFIG_IDF_TARGET_ESP32C5
+-    if ((CONFIG_WIFI_BAND_MODE == WIFI_BAND_MODE_2G_ONLY && CONFIG_WIFI_2G_BANDWIDTHS == WIFI_BW_HT20)
+-            || (CONFIG_WIFI_BAND_MODE == WIFI_BAND_MODE_5G_ONLY && CONFIG_WIFI_5G_BANDWIDTHS == WIFI_BW_HT20)) {
++    if ((CONFIG_WIFI_BAND_MODE == WIFI_BAND_MODE_2G_ONLY && CONFIG_WIFI_2G_BANDWIDTHS == WIFI_BW20)
++            || (CONFIG_WIFI_BAND_MODE == WIFI_BAND_MODE_5G_ONLY && CONFIG_WIFI_5G_BANDWIDTHS == WIFI_BW20)) {
+         ESP_ERROR_CHECK(esp_wifi_set_channel(CONFIG_LESS_INTERFERENCE_CHANNEL, WIFI_SECOND_CHAN_NONE));
+     } else {
+         ESP_ERROR_CHECK(esp_wifi_set_channel(CONFIG_LESS_INTERFERENCE_CHANNEL, WIFI_SECOND_CHAN_BELOW));
+     }
+ #elif (CONFIG_IDF_TARGET_ESP32C6 && ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0)) || CONFIG_IDF_TARGET_ESP32C61
+-    if (CONFIG_WIFI_BAND_MODE == WIFI_BAND_MODE_2G_ONLY && CONFIG_WIFI_2G_BANDWIDTHS == WIFI_BW_HT20) {
++    if (CONFIG_WIFI_BAND_MODE == WIFI_BAND_MODE_2G_ONLY && CONFIG_WIFI_2G_BANDWIDTHS == WIFI_BW20) {
+         ESP_ERROR_CHECK(esp_wifi_set_channel(CONFIG_LESS_INTERFERENCE_CHANNEL, WIFI_SECOND_CHAN_NONE));
+     } else {
+         ESP_ERROR_CHECK(esp_wifi_set_channel(CONFIG_LESS_INTERFERENCE_CHANNEL, WIFI_SECOND_CHAN_BELOW));
+     }
+ #else
+-    if (CONFIG_WIFI_BANDWIDTH == WIFI_BW_HT20) {
++    if (CONFIG_WIFI_BANDWIDTH == WIFI_BW20) {
+         ESP_ERROR_CHECK(esp_wifi_set_channel(CONFIG_LESS_INTERFERENCE_CHANNEL, WIFI_SECOND_CHAN_NONE));
+     } else {
+         ESP_ERROR_CHECK(esp_wifi_set_channel(CONFIG_LESS_INTERFERENCE_CHANNEL, WIFI_SECOND_CHAN_BELOW));

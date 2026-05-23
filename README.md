@@ -11,7 +11,7 @@ RuView LT
 ## ソフトウェアの準備
 
 ```bash
-export PROJECT_ROOT=/path/to/iotlt_2026_06_ruview   # 手元の clone 先に合わせる
+export PROJECT_ROOT=/Users/yukilab/temp/pcafe/iotlt_2026_06_ruview   # 手元の clone 先に合わせる
 ```
 
 ### 新しいマシン（推奨）
@@ -131,10 +131,12 @@ source .venv/bin/activate
 # 依存をインストール（requirements.txt: PyQt5, pyqtgraph, pandas, numpy, scipy, pyserial ...）
 uv pip install -r requirements.txt
 
-# 【重要】requirements.txt はバージョン無指定のため、uv は最新の pandas 3.0 / numpy 2.x を
-# 入れてしまう。これらは esp_csi_tool.py と非互換で、起動後に TypeError が大量に出て
-# CSI データを取り込めない（data 列への list 代入が失敗する）。互換版に固定する:
-uv pip install "numpy==1.26.4" "pandas==2.2.3"
+# 【重要】requirements.txt はバージョン無指定のため、uv は最新の pandas 3.0 / numpy 2.x /
+# scipy 1.17 を入れてしまう。これらは esp_csi_tool.py と非互換で、起動後に TypeError が
+# 大量に出て CSI データを取り込めない（data 列への list 代入が失敗する）。
+# また scipy 1.17 は numpy>=2 を要求するため numpy 1.26 と共存できない。
+# numpy 1.26 と整合する scipy 1.13.x に併せて固定する:
+uv pip install "numpy==1.26.4" "pandas==2.2.3" "scipy==1.13.1"
 
 # CSI波形、RSSI、Wi-Fiチャネル情報、在室・動作判定のしきい値調整などを表示
 # ポートは受信側を flash したものと同じ（/dev/ttyUSB5 は個別に確認してください）
